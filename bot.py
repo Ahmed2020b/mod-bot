@@ -89,9 +89,11 @@ class TicketButton(Button):
             await ticket_channel.set_permissions(interaction.user, view_channel=True, send_messages=True)
             
             # Add moderator permissions
-            admin_role = discord.utils.get(interaction.guild.roles, name="Moderator")
-            if admin_role:
-                await ticket_channel.set_permissions(admin_role, view_channel=True, send_messages=True)
+            mod_roles = load_mod_roles()
+            for role_id in mod_roles:
+                role = interaction.guild.get_role(role_id)
+                if role:
+                    await ticket_channel.set_permissions(role, view_channel=True, send_messages=True)
             
             # Create ticket embed
             embed = discord.Embed(
@@ -101,7 +103,7 @@ class TicketButton(Button):
             )
             
             # Add close button
-            close_button = Button(label="Close Ticket", style=discord.ButtonStyle.red, custom_id="close_ticket")
+            close_button = CloseButton()
             view = View()
             view.add_item(close_button)
             
@@ -482,6 +484,61 @@ async def sendticketpanel(interaction: discord.Interaction):
         # Send panel message
         await interaction.channel.send(embed=embed, view=view)
         await interaction.response.send_message("Ticket panel sent!", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
+
+@tree.command(name="ticket", description="Create a new support ticket")
+async def ticket(interaction: discord.Interaction):
+    try:
+        # Get or create ticket category
+        category = discord.utils.get(interaction.guild.categories, name=TICKET_CATEGORY_NAME)
+        if not category:
+            category = await interaction.guild.create_category(TICKET_CATEGORY_NAME)
+        
+        # Create ticket channel
+        ticket_channel = await interaction.guild.create_text_channel(
+            f"ticket-{interaction.user.name}",
+            category=category,
+            topic=f"Ticket created by {interaction.user.name}"
+        )
+        
+        # Set permissions
+        await ticket_channel.set_permissions(interaction.guild.default_role, view_channel=False)
+        await ticket_channel.set_permissions(interaction.user, view_channel=True, send_messages=True)
+        
+        # Add moderator permissions
+        mod_roles = load_mod_roles()
+        for role_id in mod_roles:
+            role = interaction.guild.get_role(role_id)
+            if role:
+                await ticket_channel.set_permissions(role, view_channel=True, send_messages=True)
+        
+        # Create ticket embed
+        embed = discord.Embed(
+            title="New Ticket Created",
+            description=f"Ticket created by {interaction.user.mention}\nPlease describe your issue and a moderator will assist you shortly.",
+            color=discord.Color.green()
+        )
+        
+        # Add close button
+        close_button = CloseButton()
+        view = View()
+        view.add_item(close_button)
+        
+        # Send initial message
+        await ticket_channel.send(embed=embed, view=view)
+        await interaction.response.send_message(f"Ticket created! Please check {ticket_channel.mention}", ephemeral=True)
+        
+        # Log ticket creation
+        logs_channel = discord.utils.get(interaction.guild.channels, name=TICKET_LOGS_CHANNEL)
+        if logs_channel:
+            log_embed = discord.Embed(
+                title="Ticket Created",
+                description=f"Ticket created by {interaction.user.mention}\nChannel: {ticket_channel.mention}",
+                color=discord.Color.blue()
+            )
+            await logs_channel.send(embed=log_embed)
+            
     except Exception as e:
         await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
 
