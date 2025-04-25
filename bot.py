@@ -25,6 +25,21 @@ ECONOMY_FILE = "economy.json"
 DAILY_COOLDOWN_FILE = "daily_cooldown.json"
 JOBS_FILE = "jobs.json"
 
+def load_jobs():
+    try:
+        with open(JOBS_FILE, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {"roles": {}}
+
+def save_jobs(jobs):
+    with open(JOBS_FILE, 'w') as f:
+        json.dump(jobs, f)
+
+def get_job_salary(role_name):
+    jobs = load_jobs()
+    return jobs["roles"].get(role_name, 0)
+
 def load_mod_roles():
     try:
         with open(MOD_ROLES_FILE, 'r') as f:
