@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import asyncio
 from discord.ui import Button, View
 import json
+from datetime import datetime, timedelta
 
 # Load environment variables
 load_dotenv()
@@ -20,6 +21,9 @@ tree = bot.tree
 MOD_ROLES_FILE = "mod_roles.json"
 TICKET_PANEL_FILE = "ticket_panel.json"
 AUTO_RESPONDER_FILE = "auto_responder.json"
+ECONOMY_FILE = "economy.json"
+DAILY_COOLDOWN_FILE = "daily_cooldown.json"
+JOBS_FILE = "jobs.json"
 
 def load_mod_roles():
     try:
@@ -57,6 +61,61 @@ def load_auto_responses():
 def save_auto_responses(responses):
     with open(AUTO_RESPONDER_FILE, 'w') as f:
         json.dump(responses, f)
+
+def load_economy():
+    try:
+        with open(ECONOMY_FILE, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+
+def save_economy(economy):
+    with open(ECONOMY_FILE, 'w') as f:
+        json.dump(economy, f)
+
+def load_daily_cooldowns():
+    try:
+        with open(DAILY_COOLDOWN_FILE, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+
+def save_daily_cooldowns(cooldowns):
+    with open(DAILY_COOLDOWN_FILE, 'w') as f:
+        json.dump(cooldowns, f)
+
+def get_balance(user_id):
+    economy = load_economy()
+    return economy.get(str(user_id), 0)
+
+def set_balance(user_id, amount):
+    economy = load_economy()
+    economy[str(user_id)] = amount
+    save_economy(economy)
+
+def add_money(user_id, amount):
+    current_balance = get_balance(user_id)
+    set_balance(user_id, current_balance + amount)
+
+def remove_money(user_id, amount):
+    current_balance = get_balance(user_id)
+    if current_balance >= amount:
+        set_balance(user_id, current_balance - amount)
+        return True
+    return False
+
+def can_claim_daily(user_id):
+    cooldowns = load_daily_cooldowns()
+    last_claim = cooldowns.get(str(user_id))
+    if not last_claim:
+        return True
+    last_claim_time = datetime.fromisoformat(last_claim)
+    return datetime.now() - last_claim_time >= timedelta(hours=24)
+
+def set_daily_claimed(user_id):
+    cooldowns = load_daily_cooldowns()
+    cooldowns[str(user_id)] = datetime.now().isoformat()
+    save_daily_cooldowns(cooldowns)
 
 def is_admin_or_owner():
     async def predicate(ctx):
@@ -591,6 +650,187 @@ async def on_message(message):
     
     await bot.process_commands(message)
 
+@tree.command(name="balance", description="Check your current balance")
+async def balance(interaction: discord.Interaction):
+    try:
+        balance = get_balance(interaction.user.id)
+        await interaction.response.send_message(f"Your current balance is: {balance} coins", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
+
+@tree.command(name="daily", description="Claim your daily salary")
+async def daily(interaction: discord.Interaction):
+    try:
+        if not can_claim_daily(interaction.user.id):
+            await interaction.response.send_message("You have already claimed your daily salary today! Please wait 24 hours.", ephemeral=True)
+            return
+        
+        amount = 100  # Default daily amount
+        add_money(interaction.user.id, amount)
+        set_daily_claimed(interaction.user.id)
+        await interaction.response.send_message(f"You claimed your daily salary of {amount} coins!", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
+
+@tree.command(name="transfer", description="Transfer money to another user")
+async def transfer(interaction: discord.Interaction, member: discord.Member, amount: int):
+    try:
+        if amount <= 0:
+            await interaction.response.send_message("Please enter a positive amount!", ephemeral=True)
+            return
+        
+        if member.bot:
+            await interaction.response.send_message("You cannot transfer money to bots!", ephemeral=True)
+            return
+        
+        if member.id == interaction.user.id:
+            await interaction.response.send_message("You cannot transfer money to yourself!", ephemeral=True)
+            return
+        
+        if remove_money(interaction.user.id, amount):
+            add_money(member.id, amount)
+            await interaction.response.send_message(f"You transferred {amount} coins to {member.mention}!", ephemeral=True)
+        else:
+            await interaction.response.send_message("You don't have enough money!", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
+
+@tree.command(name="addmoney", description="Add money to a user's balance (Admin only)")
+@is_admin_or_owner()
+async def addmoney(interaction: discord.Interaction, member: discord.Member, amount: int):
+    try:
+        if amount <= 0:
+            await interaction.response.send_message("Please enter a positive amount!", ephemeral=True)
+            return
+        
+        add_money(member.id, amount)
+        await interaction.response.send_message(f"Added {amount} coins to {member.mention}'s balance!", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
+
+@tree.command(name="setdaily", description="Set the daily salary amount (Admin only)")
+@is_admin_or_owner()
+async def setdaily(interaction: discord.Interaction, amount: int):
+    try:
+        if amount <= 0:
+            await interaction.response.send_message("Please enter a positive amount!", ephemeral=True)
+            return
+        
+        # Store the daily amount in a file
+        with open("daily_amount.json", 'w') as f:
+            json.dump({"amount": amount}, f)
+        
+        await interaction.response.send_message(f"Daily salary amount set to {amount} coins!", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
+
+@tree.command(name="addjob", description="Add an existing role to the job system with salary (Admin only)")
+@is_admin_or_owner()
+async def addjob(interaction: discord.Interaction, role: discord.Role, salary: int):
+    try:
+        if salary <= 0:
+            await interaction.response.send_message("Salary must be a positive number!", ephemeral=True)
+            return
+        
+        jobs = load_jobs()
+        jobs["roles"][role.name] = salary
+        save_jobs(jobs)
+        await interaction.response.send_message(f"Added role '{role.name}' to job system with salary {salary} coins!", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
+
+@tree.command(name="removejob", description="Remove a role from the job system (Admin only)")
+@is_admin_or_owner()
+async def removejob(interaction: discord.Interaction, role: discord.Role):
+    try:
+        jobs = load_jobs()
+        if role.name not in jobs["roles"]:
+            await interaction.response.send_message(f"Role '{role.name}' is not in the job system!", ephemeral=True)
+            return
+        
+        del jobs["roles"][role.name]
+        save_jobs(jobs)
+        await interaction.response.send_message(f"Removed role '{role.name}' from job system!", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
+
+@tree.command(name="listjobs", description="List all roles in the job system")
+async def listjobs(interaction: discord.Interaction):
+    try:
+        jobs = load_jobs()
+        if not jobs["roles"]:
+            await interaction.response.send_message("No roles in the job system!", ephemeral=True)
+            return
+        
+        job_list = []
+        for role_name, salary in jobs["roles"].items():
+            role = discord.utils.get(interaction.guild.roles, name=role_name)
+            if role:
+                job_list.append(f"• {role.mention}: {salary} coins")
+            else:
+                job_list.append(f"• {role_name}: {salary} coins (Role not found)")
+        
+        embed = discord.Embed(
+            title="Roles in Job System",
+            description="\n".join(job_list),
+            color=discord.Color.blue()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
+
+@tree.command(name="assignjob", description="Assign a role to a member (Mod only)")
+@is_admin_or_owner()
+async def assignjob(interaction: discord.Interaction, member: discord.Member, role: discord.Role):
+    try:
+        jobs = load_jobs()
+        if role.name not in jobs["roles"]:
+            await interaction.response.send_message(f"Role '{role.name}' is not in the job system!", ephemeral=True)
+            return
+        
+        # Add the role to the member
+        await member.add_roles(role)
+        await interaction.response.send_message(f"Assigned {role.mention} to {member.mention}!", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
+
+@tree.command(name="removejobrole", description="Remove a role from a member (Mod only)")
+@is_admin_or_owner()
+async def removejobrole(interaction: discord.Interaction, member: discord.Member, role: discord.Role):
+    try:
+        jobs = load_jobs()
+        if role.name not in jobs["roles"]:
+            await interaction.response.send_message(f"Role '{role.name}' is not in the job system!", ephemeral=True)
+            return
+        
+        # Remove the role from the member
+        await member.remove_roles(role)
+        await interaction.response.send_message(f"Removed {role.mention} from {member.mention}!", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
+
+async def distribute_salaries():
+    while True:
+        try:
+            # Get all guilds the bot is in
+            for guild in bot.guilds:
+                # Get all members in the guild
+                for member in guild.members:
+                    if member.bot:
+                        continue
+                    
+                    # Check if member has any job roles
+                    for role in member.roles:
+                        salary = get_job_salary(role.name)
+                        if salary > 0:
+                            add_money(member.id, salary)
+            
+            # Wait for 24 hours
+            await asyncio.sleep(24 * 60 * 60)
+        except Exception as e:
+            print(f"Error in salary distribution: {e}")
+            await asyncio.sleep(60)  # Wait a minute before retrying
+
 @bot.event
 async def on_ready():
     print(f'{bot.user} has connected to Discord!')
@@ -602,6 +842,8 @@ async def on_ready():
     try:
         synced = await bot.tree.sync()
         print(f"Synced {len(synced)} command(s)")
+        # Start the salary distribution task
+        bot.loop.create_task(distribute_salaries())
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 

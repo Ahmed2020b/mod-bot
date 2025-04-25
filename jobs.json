@@ -1,0 +1,7 @@
+{
+    "roles": {
+        "Officer": 200,
+        "Manager": 300,
+        "Supervisor": 400
+    }
+} 
