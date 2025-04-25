@@ -19,6 +19,7 @@ tree = bot.tree
 # Admin role management
 MOD_ROLES_FILE = "mod_roles.json"
 TICKET_PANEL_FILE = "ticket_panel.json"
+AUTO_RESPONDER_FILE = "auto_responder.json"
 
 def load_mod_roles():
     try:
@@ -45,6 +46,17 @@ def load_ticket_panel():
 def save_ticket_panel(panel):
     with open(TICKET_PANEL_FILE, 'w') as f:
         json.dump(panel, f)
+
+def load_auto_responses():
+    try:
+        with open(AUTO_RESPONDER_FILE, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+
+def save_auto_responses(responses):
+    with open(AUTO_RESPONDER_FILE, 'w') as f:
+        json.dump(responses, f)
 
 def is_admin_or_owner():
     async def predicate(ctx):
@@ -541,6 +553,43 @@ async def ticket(interaction: discord.Interaction):
             
     except Exception as e:
         await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
+
+@tree.command(name="ar", description="Add or remove an auto-response")
+@is_admin_or_owner()
+async def ar(interaction: discord.Interaction, trigger: str, response: str = None):
+    try:
+        auto_responses = load_auto_responses()
+        
+        if response is None:
+            # Remove auto-response
+            if trigger in auto_responses:
+                del auto_responses[trigger]
+                save_auto_responses(auto_responses)
+                await interaction.response.send_message(f"Removed auto-response for '{trigger}'", ephemeral=True)
+            else:
+                await interaction.response.send_message(f"No auto-response found for '{trigger}'", ephemeral=True)
+        else:
+            # Add/update auto-response
+            auto_responses[trigger] = response
+            save_auto_responses(auto_responses)
+            await interaction.response.send_message(f"Added auto-response: When someone says '{trigger}', I'll respond with '{response}'", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
+
+@bot.event
+async def on_message(message):
+    if message.author == bot.user:
+        return
+        
+    auto_responses = load_auto_responses()
+    content = message.content.lower()
+    
+    for trigger, response in auto_responses.items():
+        if trigger.lower() in content:
+            await message.channel.send(response)
+            break
+    
+    await bot.process_commands(message)
 
 @bot.event
 async def on_ready():
