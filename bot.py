@@ -248,6 +248,11 @@ class CloseButton(Button):
         except Exception as e:
             await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
 
+class TicketPanelView(View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(TicketButton())
+
 @tree.command(name="setup", description="Setup the moderation system")
 @is_admin_or_owner()
 async def setup(interaction: discord.Interaction):
@@ -435,8 +440,7 @@ async def ticketsetup(interaction: discord.Interaction):
         )
         
         # Add ticket button
-        view = View()
-        view.add_item(TicketButton())
+        view = TicketPanelView()
         
         # Send panel message
         await panel_channel.send(embed=embed, view=view)
@@ -563,9 +567,8 @@ async def sendticketpanel(interaction: discord.Interaction):
             color=color_map.get(panel["color"], discord.Color.blue())
         )
         
-        # Add ticket button
-        view = View()
-        view.add_item(TicketButton())
+        # Add ticket button using the persistent view
+        view = TicketPanelView()
         
         # Send panel message
         await interaction.channel.send(embed=embed, view=view)
@@ -859,6 +862,8 @@ async def on_ready():
         print(f"Synced {len(synced)} command(s)")
         # Start the salary distribution task
         bot.loop.create_task(distribute_salaries())
+        # Add the persistent view
+        bot.add_view(TicketPanelView())
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
