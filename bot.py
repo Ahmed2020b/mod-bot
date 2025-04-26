@@ -639,21 +639,18 @@ async def ticket(interaction: discord.Interaction):
 @is_admin_or_owner()
 async def ar(interaction: discord.Interaction, trigger: str, response: str = None):
     try:
-        auto_responses = db.get_auto_responses()
-        
         if response is None:
             # Remove auto-response
-            if trigger in auto_responses:
-                del auto_responses[trigger]
-                db.set_auto_responses(auto_responses)
+            if db.remove_auto_response(trigger):
                 await interaction.response.send_message(f"Removed auto-response for '{trigger}'", ephemeral=True)
             else:
-                await interaction.response.send_message(f"No auto-response found for '{trigger}'", ephemeral=True)
+                await interaction.response.send_message(f"Failed to remove auto-response for '{trigger}'. Please try again.", ephemeral=True)
         else:
             # Add/update auto-response
-            auto_responses[trigger] = response
-            db.set_auto_responses(auto_responses)
-            await interaction.response.send_message(f"Added auto-response: When someone says '{trigger}', I'll respond with '{response}'", ephemeral=True)
+            if db.add_auto_response(trigger, response):
+                await interaction.response.send_message(f"Added auto-response: When someone says '{trigger}', I'll respond with '{response}'", ephemeral=True)
+            else:
+                await interaction.response.send_message(f"Failed to add auto-response. Please try again.", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
 

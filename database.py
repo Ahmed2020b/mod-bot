@@ -106,6 +106,65 @@ class Database:
             self.conn.rollback()
             raise
 
+    def check_and_create_tables(self):
+        """Check if all required tables exist and create them if they don't"""
+        try:
+            # Check and create economy table
+            self.cursor.execute('''
+                CREATE TABLE IF NOT EXISTS economy (
+                    user_id INTEGER PRIMARY KEY,
+                    balance INTEGER DEFAULT 0
+                )
+            ''')
+
+            # Check and create mod_roles table
+            self.cursor.execute('''
+                CREATE TABLE IF NOT EXISTS mod_roles (
+                    role_id INTEGER PRIMARY KEY
+                )
+            ''')
+
+            # Check and create ticket_panel table
+            self.cursor.execute('''
+                CREATE TABLE IF NOT EXISTS ticket_panel (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT,
+                    description TEXT,
+                    color TEXT
+                )
+            ''')
+
+            # Check and create auto_responder table
+            self.cursor.execute('''
+                CREATE TABLE IF NOT EXISTS auto_responder (
+                    trigger TEXT PRIMARY KEY,
+                    response TEXT
+                )
+            ''')
+
+            # Check and create daily_cooldown table
+            self.cursor.execute('''
+                CREATE TABLE IF NOT EXISTS daily_cooldown (
+                    user_id INTEGER PRIMARY KEY,
+                    last_claim TEXT
+                )
+            ''')
+
+            # Check and create jobs table
+            self.cursor.execute('''
+                CREATE TABLE IF NOT EXISTS jobs (
+                    role_id INTEGER PRIMARY KEY,
+                    salary INTEGER
+                )
+            ''')
+
+            self.conn.commit()
+            print("All required tables verified and created if needed")
+        except Exception as e:
+            print(f"Error checking/creating tables: {str(e)}")
+            self.conn.rollback()
+            raise
+
     # Economy methods
     def get_balance(self, user_id):
         try:
@@ -199,31 +258,44 @@ class Database:
     # Auto responder methods
     def get_auto_responses(self):
         try:
+            # Ensure the table exists
+            self.check_and_create_tables()
+            
             self.cursor.execute('SELECT trigger, response FROM auto_responder')
             return {row[0]: row[1] for row in self.cursor.fetchall()}
         except Exception as e:
-            print(f"Error getting auto responses: {e}")
+            print(f"Error getting auto responses: {str(e)}")
             return {}
 
     def add_auto_response(self, trigger, response):
         try:
+            # Ensure the table exists
+            self.check_and_create_tables()
+            
             self.cursor.execute('''
                 INSERT INTO auto_responder (trigger, response)
                 VALUES (?, ?)
                 ON CONFLICT (trigger) DO UPDATE SET response = ?
             ''', (trigger, response, response))
             self.conn.commit()
+            return True
         except Exception as e:
-            print(f"Error adding auto response: {e}")
+            print(f"Error adding auto response: {str(e)}")
             self.conn.rollback()
+            return False
 
     def remove_auto_response(self, trigger):
         try:
+            # Ensure the table exists
+            self.check_and_create_tables()
+            
             self.cursor.execute('DELETE FROM auto_responder WHERE trigger = ?', (trigger,))
             self.conn.commit()
+            return True
         except Exception as e:
-            print(f"Error removing auto response: {e}")
+            print(f"Error removing auto response: {str(e)}")
             self.conn.rollback()
+            return False
 
     # Daily cooldown methods
     def can_claim_daily(self, user_id):
