@@ -5,8 +5,8 @@ import os
 from dotenv import load_dotenv
 import asyncio
 from discord.ui import Button, View
-import json
 from datetime import datetime, timedelta
+from database import Database
 
 # Load environment variables
 load_dotenv()
@@ -16,6 +16,29 @@ intents = discord.Intents.all()  # Enable all intents
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 tree = bot.tree
+
+# Initialize database
+db = Database()
+
+# Ticket system configuration
+TICKET_CATEGORY_NAME = "Tickets"
+TICKET_LOGS_CHANNEL = "ticket-logs"
+TICKET_PANEL_CHANNEL = "create-ticket"
+
+def is_admin_or_owner():
+    async def predicate(ctx):
+        if isinstance(ctx, discord.Interaction):
+            if ctx.user.id == ctx.guild.owner_id:
+                return True
+            user_roles = [role.id for role in ctx.user.roles]
+            mod_roles = db.get_mod_roles()
+            return any(role_id in user_roles for role_id in mod_roles)
+        if ctx.author.id == ctx.guild.owner_id:
+            return True
+        user_roles = [role.id for role in ctx.author.roles]
+        mod_roles = db.get_mod_roles()
+        return any(role_id in user_roles for role_id in mod_roles)
+    return commands.check(predicate)
 
 # Admin role management
 MOD_ROLES_FILE = "mod_roles.json"
@@ -138,19 +161,14 @@ def is_admin_or_owner():
             if ctx.user.id == ctx.guild.owner_id:
                 return True
             user_roles = [role.id for role in ctx.user.roles]
-            mod_roles = load_mod_roles()
+            mod_roles = db.get_mod_roles()
             return any(role_id in user_roles for role_id in mod_roles)
         if ctx.author.id == ctx.guild.owner_id:
             return True
         user_roles = [role.id for role in ctx.author.roles]
-        mod_roles = load_mod_roles()
+        mod_roles = db.get_mod_roles()
         return any(role_id in user_roles for role_id in mod_roles)
     return commands.check(predicate)
-
-# Ticket system configuration
-TICKET_CATEGORY_NAME = "Tickets"
-TICKET_LOGS_CHANNEL = "ticket-logs"
-TICKET_PANEL_CHANNEL = "create-ticket"
 
 class TicketButton(Button):
     def __init__(self):
@@ -175,7 +193,7 @@ class TicketButton(Button):
             await ticket_channel.set_permissions(interaction.user, view_channel=True, send_messages=True)
             
             # Add moderator permissions
-            mod_roles = load_mod_roles()
+            mod_roles = db.get_mod_roles()
             for role_id in mod_roles:
                 role = interaction.guild.get_role(role_id)
                 if role:
@@ -454,7 +472,7 @@ async def ticketsetup(interaction: discord.Interaction):
 async def addmodrole(interaction: discord.Interaction, role_id: str):
     try:
         role_id = int(role_id)
-        mod_roles = load_mod_roles()
+        mod_roles = db.get_mod_roles()
         
         if role_id in mod_roles:
             await interaction.response.send_message("This role is already a moderator role!", ephemeral=True)
@@ -466,8 +484,7 @@ async def addmodrole(interaction: discord.Interaction, role_id: str):
             await interaction.response.send_message("Role not found!", ephemeral=True)
             return
         
-        mod_roles.append(role_id)
-        save_mod_roles(mod_roles)
+        db.add_mod_role(role_id)
         await interaction.response.send_message(f"Added {role.name} as a moderator role!", ephemeral=True)
     except ValueError:
         await interaction.response.send_message("Invalid role ID! Please provide a valid role ID.", ephemeral=True)
@@ -479,14 +496,13 @@ async def addmodrole(interaction: discord.Interaction, role_id: str):
 async def removemodrole(interaction: discord.Interaction, role_id: str):
     try:
         role_id = int(role_id)
-        mod_roles = load_mod_roles()
+        mod_roles = db.get_mod_roles()
         
         if role_id not in mod_roles:
             await interaction.response.send_message("This role is not a moderator role!", ephemeral=True)
             return
         
-        mod_roles.remove(role_id)
-        save_mod_roles(mod_roles)
+        db.remove_mod_role(role_id)
         
         role = interaction.guild.get_role(role_id)
         role_name = role.name if role else "Unknown Role"
@@ -500,7 +516,7 @@ async def removemodrole(interaction: discord.Interaction, role_id: str):
 @is_admin_or_owner()
 async def listmodroles(interaction: discord.Interaction):
     try:
-        mod_roles = load_mod_roles()
+        mod_roles = db.get_mod_roles()
         if not mod_roles:
             await interaction.response.send_message("No moderator roles have been set up yet!", ephemeral=True)
             return
@@ -532,13 +548,8 @@ async def setticketpanel(interaction: discord.Interaction, title: str, descripti
             await interaction.response.send_message("Invalid color! Choose from: blue, red, green, yellow, purple, orange", ephemeral=True)
             return
         
-        # Save panel settings
-        panel = {
-            "title": title,
-            "description": description,
-            "color": color.lower()
-        }
-        save_ticket_panel(panel)
+        # Save panel settings to database
+        db.set_ticket_panel(title, description, color.lower())
         
         await interaction.response.send_message("Ticket panel settings updated!", ephemeral=True)
     except Exception as e:
@@ -548,8 +559,8 @@ async def setticketpanel(interaction: discord.Interaction, title: str, descripti
 @is_admin_or_owner()
 async def sendticketpanel(interaction: discord.Interaction):
     try:
-        # Load panel settings
-        panel = load_ticket_panel()
+        # Load panel settings from database
+        panel = db.get_ticket_panel()
         
         # Create embed with custom colors
         color_map = {
@@ -596,7 +607,7 @@ async def ticket(interaction: discord.Interaction):
         await ticket_channel.set_permissions(interaction.user, view_channel=True, send_messages=True)
         
         # Add moderator permissions
-        mod_roles = load_mod_roles()
+        mod_roles = db.get_mod_roles()
         for role_id in mod_roles:
             role = interaction.guild.get_role(role_id)
             if role:
@@ -635,20 +646,20 @@ async def ticket(interaction: discord.Interaction):
 @is_admin_or_owner()
 async def ar(interaction: discord.Interaction, trigger: str, response: str = None):
     try:
-        auto_responses = load_auto_responses()
+        auto_responses = db.get_auto_responses()
         
         if response is None:
             # Remove auto-response
             if trigger in auto_responses:
                 del auto_responses[trigger]
-                save_auto_responses(auto_responses)
+                db.set_auto_responses(auto_responses)
                 await interaction.response.send_message(f"Removed auto-response for '{trigger}'", ephemeral=True)
             else:
                 await interaction.response.send_message(f"No auto-response found for '{trigger}'", ephemeral=True)
         else:
             # Add/update auto-response
             auto_responses[trigger] = response
-            save_auto_responses(auto_responses)
+            db.set_auto_responses(auto_responses)
             await interaction.response.send_message(f"Added auto-response: When someone says '{trigger}', I'll respond with '{response}'", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
@@ -658,7 +669,7 @@ async def on_message(message):
     if message.author == bot.user:
         return
         
-    auto_responses = load_auto_responses()
+    auto_responses = db.get_auto_responses()
     content = message.content.lower()
     
     for trigger, response in auto_responses.items():
@@ -671,7 +682,7 @@ async def on_message(message):
 @tree.command(name="balance", description="Check your current balance")
 async def balance(interaction: discord.Interaction):
     try:
-        balance = get_balance(interaction.user.id)
+        balance = db.get_balance(interaction.user.id)
         await interaction.response.send_message(f"Your current balance is: {balance} coins", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
@@ -679,13 +690,14 @@ async def balance(interaction: discord.Interaction):
 @tree.command(name="daily", description="Claim your daily salary")
 async def daily(interaction: discord.Interaction):
     try:
-        if not can_claim_daily(interaction.user.id):
+        if not db.can_claim_daily(interaction.user.id):
             await interaction.response.send_message("You have already claimed your daily salary today! Please wait 24 hours.", ephemeral=True)
             return
         
         amount = 100  # Default daily amount
-        add_money(interaction.user.id, amount)
-        set_daily_claimed(interaction.user.id)
+        current_balance = db.get_balance(interaction.user.id)
+        db.set_balance(interaction.user.id, current_balance + amount)
+        db.set_daily_claimed(interaction.user.id)
         await interaction.response.send_message(f"You claimed your daily salary of {amount} coins!", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
@@ -705,8 +717,11 @@ async def transfer(interaction: discord.Interaction, member: discord.Member, amo
             await interaction.response.send_message("You cannot transfer money to yourself!", ephemeral=True)
             return
         
-        if remove_money(interaction.user.id, amount):
-            add_money(member.id, amount)
+        sender_balance = db.get_balance(interaction.user.id)
+        if sender_balance >= amount:
+            db.set_balance(interaction.user.id, sender_balance - amount)
+            receiver_balance = db.get_balance(member.id)
+            db.set_balance(member.id, receiver_balance + amount)
             await interaction.response.send_message(f"You transferred {amount} coins to {member.mention}!", ephemeral=True)
         else:
             await interaction.response.send_message("You don't have enough money!", ephemeral=True)
@@ -721,24 +736,9 @@ async def addmoney(interaction: discord.Interaction, member: discord.Member, amo
             await interaction.response.send_message("Please enter a positive amount!", ephemeral=True)
             return
         
-        add_money(member.id, amount)
+        current_balance = db.get_balance(member.id)
+        db.set_balance(member.id, current_balance + amount)
         await interaction.response.send_message(f"Added {amount} coins to {member.mention}'s balance!", ephemeral=True)
-    except Exception as e:
-        await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
-
-@tree.command(name="setdaily", description="Set the daily salary amount (Admin only)")
-@is_admin_or_owner()
-async def setdaily(interaction: discord.Interaction, amount: int):
-    try:
-        if amount <= 0:
-            await interaction.response.send_message("Please enter a positive amount!", ephemeral=True)
-            return
-        
-        # Store the daily amount in a file
-        with open("daily_amount.json", 'w') as f:
-            json.dump({"amount": amount}, f)
-        
-        await interaction.response.send_message(f"Daily salary amount set to {amount} coins!", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
 
@@ -750,9 +750,7 @@ async def addjob(interaction: discord.Interaction, role: discord.Role, salary: i
             await interaction.response.send_message("Salary must be a positive number!", ephemeral=True)
             return
         
-        jobs = load_jobs()
-        jobs["roles"][role.name] = salary
-        save_jobs(jobs)
+        db.add_job(role.id, salary)
         await interaction.response.send_message(f"Added role '{role.name}' to job system with salary {salary} coins!", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
@@ -761,13 +759,12 @@ async def addjob(interaction: discord.Interaction, role: discord.Role, salary: i
 @is_admin_or_owner()
 async def removejob(interaction: discord.Interaction, role: discord.Role):
     try:
-        jobs = load_jobs()
-        if role.name not in jobs["roles"]:
+        jobs = db.get_jobs()
+        if role.id not in jobs:
             await interaction.response.send_message(f"Role '{role.name}' is not in the job system!", ephemeral=True)
             return
         
-        del jobs["roles"][role.name]
-        save_jobs(jobs)
+        db.remove_job(role.id)
         await interaction.response.send_message(f"Removed role '{role.name}' from job system!", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
@@ -775,18 +772,18 @@ async def removejob(interaction: discord.Interaction, role: discord.Role):
 @tree.command(name="listjobs", description="List all roles in the job system")
 async def listjobs(interaction: discord.Interaction):
     try:
-        jobs = load_jobs()
-        if not jobs["roles"]:
+        jobs = db.get_jobs()
+        if not jobs:
             await interaction.response.send_message("No roles in the job system!", ephemeral=True)
             return
         
         job_list = []
-        for role_name, salary in jobs["roles"].items():
-            role = discord.utils.get(interaction.guild.roles, name=role_name)
+        for role_id, salary in jobs.items():
+            role = interaction.guild.get_role(role_id)
             if role:
                 job_list.append(f"• {role.mention}: {salary} coins")
             else:
-                job_list.append(f"• {role_name}: {salary} coins (Role not found)")
+                job_list.append(f"• Unknown Role (ID: {role_id}): {salary} coins")
         
         embed = discord.Embed(
             title="Roles in Job System",
@@ -801,8 +798,8 @@ async def listjobs(interaction: discord.Interaction):
 @is_admin_or_owner()
 async def assignjob(interaction: discord.Interaction, member: discord.Member, role: discord.Role):
     try:
-        jobs = load_jobs()
-        if role.name not in jobs["roles"]:
+        jobs = db.get_jobs()
+        if role.id not in jobs:
             await interaction.response.send_message(f"Role '{role.name}' is not in the job system!", ephemeral=True)
             return
         
@@ -816,8 +813,8 @@ async def assignjob(interaction: discord.Interaction, member: discord.Member, ro
 @is_admin_or_owner()
 async def removejobrole(interaction: discord.Interaction, member: discord.Member, role: discord.Role):
     try:
-        jobs = load_jobs()
-        if role.name not in jobs["roles"]:
+        jobs = db.get_jobs()
+        if role.id not in jobs:
             await interaction.response.send_message(f"Role '{role.name}' is not in the job system!", ephemeral=True)
             return
         
