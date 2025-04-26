@@ -21,6 +21,11 @@ class Database:
             database = os.getenv('SQLITECLOUD_DB', 'chinook.sqlite')
             apikey = os.getenv('SQLITECLOUD_API_KEY', 'pk8J7e64Pt8yfjaYeR5S6L9Emj0CwZw8RYBno8fi7p4')
             
+            print(f"Attempting to connect to SQLiteCloud with:")
+            print(f"Host: {host}")
+            print(f"Port: {port}")
+            print(f"Database: {database}")
+            
             # Construct connection URL
             connection_url = f"sqlitecloud://{host}:{port}/{database}?apikey={apikey}"
             
@@ -28,8 +33,18 @@ class Database:
             self.conn = sqlitecloud.connect(connection_url)
             self.cursor = self.conn.cursor()
             print("Successfully connected to SQLiteCloud database")
+            
+            # Test the connection with a simple query
+            self.cursor.execute("SELECT 1")
+            result = self.cursor.fetchone()
+            if result and result[0] == 1:
+                print("Database connection test successful")
+            else:
+                print("Warning: Database connection test failed")
+                
         except Exception as e:
-            print(f"Error connecting to SQLiteCloud database: {e}")
+            print(f"Error connecting to SQLiteCloud database: {str(e)}")
+            print("Please check your SQLiteCloud credentials and connection settings")
             raise
 
     def create_tables(self):
@@ -94,24 +109,32 @@ class Database:
     # Economy methods
     def get_balance(self, user_id):
         try:
+            print(f"Attempting to get balance for user {user_id}")
             self.cursor.execute('SELECT balance FROM economy WHERE user_id = ?', (user_id,))
             result = self.cursor.fetchone()
-            return result[0] if result else 0
+            balance = result[0] if result else 0
+            print(f"Retrieved balance for user {user_id}: {balance}")
+            return balance
         except Exception as e:
-            print(f"Error getting balance: {e}")
+            print(f"Error getting balance: {str(e)}")
+            print("Current connection status:", "Connected" if self.conn else "Disconnected")
             return 0
 
     def set_balance(self, user_id, amount):
         try:
+            print(f"Attempting to set balance for user {user_id} to {amount}")
             self.cursor.execute('''
                 INSERT INTO economy (user_id, balance)
                 VALUES (?, ?)
                 ON CONFLICT (user_id) DO UPDATE SET balance = ?
             ''', (user_id, amount, amount))
             self.conn.commit()
+            print(f"Successfully set balance for user {user_id}")
         except Exception as e:
-            print(f"Error setting balance: {e}")
+            print(f"Error setting balance: {str(e)}")
+            print("Current connection status:", "Connected" if self.conn else "Disconnected")
             self.conn.rollback()
+            raise
 
     # Mod roles methods
     def get_mod_roles(self):

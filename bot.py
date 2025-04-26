@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import os
+import json
 from dotenv import load_dotenv
 import asyncio
 from discord.ui import Button, View
@@ -103,32 +104,24 @@ def save_auto_responses(responses):
 def load_economy():
     try:
         with open(ECONOMY_FILE, 'r') as f:
-            return json.load(f)
+            data = json.load(f)
+            if "users" not in data:
+                data["users"] = {}
+            return data
     except FileNotFoundError:
-        return {}
+        return {"users": {}}
 
 def save_economy(economy):
     with open(ECONOMY_FILE, 'w') as f:
-        json.dump(economy, f)
-
-def load_daily_cooldowns():
-    try:
-        with open(DAILY_COOLDOWN_FILE, 'r') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return {}
-
-def save_daily_cooldowns(cooldowns):
-    with open(DAILY_COOLDOWN_FILE, 'w') as f:
-        json.dump(cooldowns, f)
+        json.dump(economy, f, indent=4)
 
 def get_balance(user_id):
     economy = load_economy()
-    return economy.get(str(user_id), 0)
+    return economy["users"].get(str(user_id), 0)
 
 def set_balance(user_id, amount):
     economy = load_economy()
-    economy[str(user_id)] = amount
+    economy["users"][str(user_id)] = amount
     save_economy(economy)
 
 def add_money(user_id, amount):
