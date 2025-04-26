@@ -221,20 +221,26 @@ class Database:
             self.conn.rollback()
 
     # Ticket panel methods
-    def get_ticket_panel(self):
+    def get_ticket_panel(self, panel_id: int = None):
         try:
             # Ensure the table exists
             self.check_and_create_tables()
             
-            self.cursor.execute('SELECT title, description, color FROM ticket_panel ORDER BY id DESC LIMIT 1')
+            if panel_id is not None:
+                self.cursor.execute('SELECT id, title, description, color FROM ticket_panel WHERE id = ?', (panel_id,))
+            else:
+                self.cursor.execute('SELECT id, title, description, color FROM ticket_panel ORDER BY id DESC LIMIT 1')
+            
             result = self.cursor.fetchone()
             if result:
                 return {
-                    "title": result[0],
-                    "description": result[1],
-                    "color": result[2]
+                    "id": result[0],
+                    "title": result[1],
+                    "description": result[2],
+                    "color": result[3]
                 }
             return {
+                "id": 0,
                 "title": "Support Ticket System",
                 "description": "Click the button below to create a new support ticket. A moderator will assist you shortly.",
                 "color": "blue"
@@ -242,6 +248,7 @@ class Database:
         except Exception as e:
             print(f"Error getting ticket panel: {str(e)}")
             return {
+                "id": 0,
                 "title": "Support Ticket System",
                 "description": "Click the button below to create a new support ticket. A moderator will assist you shortly.",
                 "color": "blue"
@@ -257,11 +264,26 @@ class Database:
                 VALUES (?, ?, ?)
             ''', (title, description, color))
             self.conn.commit()
-            return True
+            
+            # Get the ID of the newly created panel
+            self.cursor.execute('SELECT last_insert_rowid()')
+            panel_id = self.cursor.fetchone()[0]
+            return panel_id
         except Exception as e:
             print(f"Error setting ticket panel: {str(e)}")
             self.conn.rollback()
-            return False
+            return None
+
+    def list_ticket_panels(self):
+        try:
+            # Ensure the table exists
+            self.check_and_create_tables()
+            
+            self.cursor.execute('SELECT id, title FROM ticket_panel ORDER BY id DESC')
+            return self.cursor.fetchall()
+        except Exception as e:
+            print(f"Error listing ticket panels: {str(e)}")
+            return []
 
     # Auto responder methods
     def get_auto_responses(self):

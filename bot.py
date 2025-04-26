@@ -542,19 +542,46 @@ async def setticketpanel(interaction: discord.Interaction, title: str, descripti
             return
         
         # Save panel settings to database
-        if db.set_ticket_panel(title, description, color.lower()):
-            await interaction.response.send_message("Ticket panel settings updated!", ephemeral=True)
+        panel_id = db.set_ticket_panel(title, description, color.lower())
+        if panel_id is not None:
+            await interaction.response.send_message(f"Ticket panel settings updated! (ID: {panel_id})", ephemeral=True)
         else:
             await interaction.response.send_message("Failed to update ticket panel settings. Please try again.", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
 
-@tree.command(name="sendticketpanel", description="Send the ticket panel in the current channel (Admin/Owner only)")
+@tree.command(name="listticketpanels", description="List all available ticket panels")
 @is_admin_or_owner()
-async def sendticketpanel(interaction: discord.Interaction):
+async def listticketpanels(interaction: discord.Interaction):
+    try:
+        panels = db.list_ticket_panels()
+        if not panels:
+            await interaction.response.send_message("No ticket panels found. Create one using /setticketpanel", ephemeral=True)
+            return
+        
+        embed = discord.Embed(
+            title="Available Ticket Panels",
+            description="Here are all the available ticket panels:",
+            color=discord.Color.blue()
+        )
+        
+        for panel_id, title in panels:
+            embed.add_field(name=f"ID: {panel_id}", value=title, inline=False)
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
+
+@tree.command(name="sendticketpanel", description="Send a specific ticket panel in the current channel (Admin/Owner only)")
+@is_admin_or_owner()
+async def sendticketpanel(interaction: discord.Interaction, panel_id: int):
     try:
         # Load panel settings from database
-        panel = db.get_ticket_panel()
+        panel = db.get_ticket_panel(panel_id)
+        
+        if panel["id"] == 0:
+            await interaction.response.send_message(f"Ticket panel with ID {panel_id} not found!", ephemeral=True)
+            return
         
         # Create embed with custom colors
         color_map = {
@@ -577,7 +604,7 @@ async def sendticketpanel(interaction: discord.Interaction):
         
         # Send panel message
         await interaction.channel.send(embed=embed, view=view)
-        await interaction.response.send_message("Ticket panel sent!", ephemeral=True)
+        await interaction.response.send_message(f"Ticket panel (ID: {panel_id}) sent!", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
 
