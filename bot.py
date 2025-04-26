@@ -690,10 +690,13 @@ async def on_message(message):
     auto_responses = db.get_auto_responses()
     content = message.content.lower()
     
-    for trigger, response in auto_responses.items():
-        if trigger.lower() in content:
-            await message.channel.send(response)
-            break
+    # Check each word in the message against each trigger
+    words = content.split()
+    for word in words:
+        for trigger, response in auto_responses.items():
+            if trigger.lower() in word:
+                await message.channel.send(response)
+                return  # Only respond once per message
     
     await bot.process_commands(message)
 
