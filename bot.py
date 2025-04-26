@@ -192,6 +192,10 @@ class TicketButton(Button):
                 if role:
                     await ticket_channel.set_permissions(role, view_channel=True, send_messages=True)
             
+            # Create ticket record in DB
+            ticket_id = db.create_ticket(interaction.user.id, ticket_channel.id)
+            db.log_ticket_action(ticket_id, "created", f"Ticket created by {interaction.user.name} (ID: {interaction.user.id})")
+            
             # Create ticket embed
             embed = discord.Embed(
                 title="New Ticket Created",
@@ -208,7 +212,7 @@ class TicketButton(Button):
             await ticket_channel.send(embed=embed, view=view)
             await interaction.response.send_message(f"Ticket created! Please check {ticket_channel.mention}", ephemeral=True)
             
-            # Log ticket creation
+            # Log ticket creation in Discord channel (optional)
             logs_channel = discord.utils.get(interaction.guild.channels, name=TICKET_LOGS_CHANNEL)
             if logs_channel:
                 log_embed = discord.Embed(
@@ -231,14 +235,17 @@ class CloseButton(Button):
                 await interaction.response.send_message("This command can only be used in ticket channels!", ephemeral=True)
                 return
             
-            # Get ticket creator
-            ticket_creator = interaction.channel.topic.split("by")[1].strip()
+            # Get ticket record from DB
+            ticket = db.get_ticket_by_channel(interaction.channel.id)
+            if ticket:
+                ticket_id = ticket[0]
+                db.close_ticket(interaction.channel.id)
+                db.log_ticket_action(ticket_id, "closed", f"Ticket closed by {interaction.user.name} (ID: {interaction.user.id})")
             
             # Create transcript
             messages = []
             async for message in interaction.channel.history(limit=None):
                 messages.append(f"{message.author.name}: {message.content}")
-            
             transcript = "\n".join(reversed(messages))
             
             # Send transcript to logs

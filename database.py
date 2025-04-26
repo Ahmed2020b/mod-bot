@@ -99,6 +99,28 @@ class Database:
                 )
             ''')
 
+            # Tickets table
+            self.cursor.execute('''
+                CREATE TABLE IF NOT EXISTS tickets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    channel_id INTEGER,
+                    created_at TEXT,
+                    closed_at TEXT
+                )
+            ''')
+
+            # Ticket logs table
+            self.cursor.execute('''
+                CREATE TABLE IF NOT EXISTS ticket_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ticket_id INTEGER,
+                    action TEXT,
+                    timestamp TEXT,
+                    details TEXT
+                )
+            ''')
+
             self.conn.commit()
             print("Tables created successfully")
         except Exception as e:
@@ -155,6 +177,28 @@ class Database:
                 CREATE TABLE IF NOT EXISTS jobs (
                     role_id INTEGER PRIMARY KEY,
                     salary INTEGER
+                )
+            ''')
+
+            # Check and create tickets table
+            self.cursor.execute('''
+                CREATE TABLE IF NOT EXISTS tickets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    channel_id INTEGER,
+                    created_at TEXT,
+                    closed_at TEXT
+                )
+            ''')
+
+            # Check and create ticket_logs table
+            self.cursor.execute('''
+                CREATE TABLE IF NOT EXISTS ticket_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ticket_id INTEGER,
+                    action TEXT,
+                    timestamp TEXT,
+                    details TEXT
                 )
             ''')
 
@@ -380,6 +424,56 @@ class Database:
         except Exception as e:
             print(f"Error removing job: {e}")
             self.conn.rollback()
+
+    def create_ticket(self, user_id, channel_id):
+        try:
+            self.check_and_create_tables()
+            now = datetime.now().isoformat()
+            self.cursor.execute('''
+                INSERT INTO tickets (user_id, channel_id, created_at, closed_at)
+                VALUES (?, ?, ?, NULL)
+            ''', (user_id, channel_id, now))
+            self.conn.commit()
+            ticket_id = self.cursor.lastrowid
+            return ticket_id
+        except Exception as e:
+            print(f"Error creating ticket: {str(e)}")
+            self.conn.rollback()
+            return None
+
+    def close_ticket(self, channel_id):
+        try:
+            self.check_and_create_tables()
+            now = datetime.now().isoformat()
+            self.cursor.execute('''
+                UPDATE tickets SET closed_at = ? WHERE channel_id = ?
+            ''', (now, channel_id))
+            self.conn.commit()
+        except Exception as e:
+            print(f"Error closing ticket: {str(e)}")
+            self.conn.rollback()
+
+    def log_ticket_action(self, ticket_id, action, details=None):
+        try:
+            self.check_and_create_tables()
+            now = datetime.now().isoformat()
+            self.cursor.execute('''
+                INSERT INTO ticket_logs (ticket_id, action, timestamp, details)
+                VALUES (?, ?, ?, ?)
+            ''', (ticket_id, action, now, details))
+            self.conn.commit()
+        except Exception as e:
+            print(f"Error logging ticket action: {str(e)}")
+            self.conn.rollback()
+
+    def get_ticket_by_channel(self, channel_id):
+        try:
+            self.check_and_create_tables()
+            self.cursor.execute('SELECT id, user_id, created_at, closed_at FROM tickets WHERE channel_id = ?', (channel_id,))
+            return self.cursor.fetchone()
+        except Exception as e:
+            print(f"Error getting ticket by channel: {str(e)}")
+            return None
 
     def close(self):
         """Close the database connection"""
