@@ -15,8 +15,14 @@ class Database:
     def connect(self):
         """Connect to the SQLiteCloud database"""
         try:
-            # Construct the connection URL using environment variables
-            connection_url = f"sqlitecloud://{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}?apikey={os.getenv('DB_PASSWORD')}"
+            # Get credentials from environment variables
+            host = os.getenv('SQLITECLOUD_HOST', 'ccnvo0ujhk.g4.sqlite.cloud')
+            port = os.getenv('SQLITECLOUD_PORT', '8860')
+            database = os.getenv('SQLITECLOUD_DB', 'chinook.sqlite')
+            apikey = os.getenv('SQLITECLOUD_API_KEY', 'pk8J7e64Pt8yfjaYeR5S6L9Emj0CwZw8RYBno8fi7p4')
+            
+            # Construct connection URL
+            connection_url = f"sqlitecloud://{host}:{port}/{database}?apikey={apikey}"
             
             # Open the connection to SQLite Cloud
             self.conn = sqlitecloud.connect(connection_url)
