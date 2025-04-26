@@ -542,9 +542,10 @@ async def setticketpanel(interaction: discord.Interaction, title: str, descripti
             return
         
         # Save panel settings to database
-        db.set_ticket_panel(title, description, color.lower())
-        
-        await interaction.response.send_message("Ticket panel settings updated!", ephemeral=True)
+        if db.set_ticket_panel(title, description, color.lower()):
+            await interaction.response.send_message("Ticket panel settings updated!", ephemeral=True)
+        else:
+            await interaction.response.send_message("Failed to update ticket panel settings. Please try again.", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"An error occurred: {str(e)}", ephemeral=True)
 

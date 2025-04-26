@@ -223,6 +223,9 @@ class Database:
     # Ticket panel methods
     def get_ticket_panel(self):
         try:
+            # Ensure the table exists
+            self.check_and_create_tables()
+            
             self.cursor.execute('SELECT title, description, color FROM ticket_panel ORDER BY id DESC LIMIT 1')
             result = self.cursor.fetchone()
             if result:
@@ -237,7 +240,7 @@ class Database:
                 "color": "blue"
             }
         except Exception as e:
-            print(f"Error getting ticket panel: {e}")
+            print(f"Error getting ticket panel: {str(e)}")
             return {
                 "title": "Support Ticket System",
                 "description": "Click the button below to create a new support ticket. A moderator will assist you shortly.",
@@ -246,14 +249,19 @@ class Database:
 
     def set_ticket_panel(self, title, description, color):
         try:
+            # Ensure the table exists
+            self.check_and_create_tables()
+            
             self.cursor.execute('''
                 INSERT INTO ticket_panel (title, description, color)
                 VALUES (?, ?, ?)
             ''', (title, description, color))
             self.conn.commit()
+            return True
         except Exception as e:
-            print(f"Error setting ticket panel: {e}")
+            print(f"Error setting ticket panel: {str(e)}")
             self.conn.rollback()
+            return False
 
     # Auto responder methods
     def get_auto_responses(self):
