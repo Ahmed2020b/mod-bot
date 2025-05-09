@@ -12,6 +12,13 @@ class Database:
         self.cursor = None
         self.max_retries = 3
         self.retry_delay = 1  # seconds
+        self.cache = {
+            'auto_responses': {},
+            'mod_roles': [],
+            'jobs': {},
+            'cache_time': {}
+        }
+        self.cache_duration = 60  # Cache duration in seconds
         self.connect()
         self.create_tables()
 
@@ -305,12 +312,19 @@ class Database:
 
     # Mod roles methods
     def get_mod_roles(self):
+        """Get mod roles with caching"""
+        if self.is_cache_valid('mod_roles'):
+            return self.cache['mod_roles']
+        
         try:
+            self.ensure_connection()
             self.cursor.execute('SELECT role_id FROM mod_roles')
-            return [row[0] for row in self.cursor.fetchall()]
+            roles = [row[0] for row in self.cursor.fetchall()]
+            self.update_cache('mod_roles', roles)
+            return roles
         except Exception as e:
             print(f"Error getting mod roles: {e}")
-            return []
+            return self.cache['mod_roles']  # Return cached data if available
 
     def add_mod_role(self, role_id):
         try:
@@ -395,44 +409,53 @@ class Database:
 
     # Auto responder methods
     def get_auto_responses(self):
+        """Get auto responses with caching"""
+        if self.is_cache_valid('auto_responses'):
+            return self.cache['auto_responses']
+        
         try:
-            # Ensure the table exists
-            self.check_and_create_tables()
-            
+            self.ensure_connection()
             self.cursor.execute('SELECT trigger, response FROM auto_responder')
-            return {row[0]: row[1] for row in self.cursor.fetchall()}
+            responses = {row[0]: row[1] for row in self.cursor.fetchall()}
+            self.update_cache('auto_responses', responses)
+            return responses
         except Exception as e:
             print(f"Error getting auto responses: {str(e)}")
-            return {}
+            return self.cache['auto_responses']  # Return cached data if available
 
     def add_auto_response(self, trigger, response):
+        """Add auto response and update cache"""
         try:
-            # Ensure the table exists
-            self.check_and_create_tables()
-            
-            self.cursor.execute('''
+            self.ensure_connection()
+            self.execute_with_retry('''
                 INSERT INTO auto_responder (trigger, response)
                 VALUES (?, ?)
                 ON CONFLICT (trigger) DO UPDATE SET response = ?
             ''', (trigger, response, response))
-            self.conn.commit()
+            self.commit_with_retry()
+            
+            # Update cache
+            self.cache['auto_responses'][trigger] = response
+            self.cache['cache_time']['auto_responses'] = datetime.now()
             return True
         except Exception as e:
             print(f"Error adding auto response: {str(e)}")
-            self.conn.rollback()
             return False
 
     def remove_auto_response(self, trigger):
+        """Remove auto response and update cache"""
         try:
-            # Ensure the table exists
-            self.check_and_create_tables()
+            self.ensure_connection()
+            self.execute_with_retry('DELETE FROM auto_responder WHERE trigger = ?', (trigger,))
+            self.commit_with_retry()
             
-            self.cursor.execute('DELETE FROM auto_responder WHERE trigger = ?', (trigger,))
-            self.conn.commit()
+            # Update cache
+            if trigger in self.cache['auto_responses']:
+                del self.cache['auto_responses'][trigger]
+                self.cache['cache_time']['auto_responses'] = datetime.now()
             return True
         except Exception as e:
             print(f"Error removing auto response: {str(e)}")
-            self.conn.rollback()
             return False
 
     # Daily cooldown methods
@@ -462,12 +485,19 @@ class Database:
 
     # Jobs methods
     def get_jobs(self):
+        """Get jobs with caching"""
+        if self.is_cache_valid('jobs'):
+            return self.cache['jobs']
+        
         try:
+            self.ensure_connection()
             self.cursor.execute('SELECT role_id, salary FROM jobs')
-            return {row[0]: row[1] for row in self.cursor.fetchall()}
+            jobs = {row[0]: row[1] for row in self.cursor.fetchall()}
+            self.update_cache('jobs', jobs)
+            return jobs
         except Exception as e:
             print(f"Error getting jobs: {e}")
-            return {}
+            return self.cache['jobs']  # Return cached data if available
 
     def add_job(self, role_id, salary):
         try:
@@ -537,6 +567,17 @@ class Database:
         except Exception as e:
             print(f"Error getting ticket by channel: {str(e)}")
             return None
+
+    def is_cache_valid(self, cache_key):
+        """Check if the cache is still valid"""
+        if cache_key not in self.cache['cache_time']:
+            return False
+        return (datetime.now() - self.cache['cache_time'][cache_key]).total_seconds() < self.cache_duration
+
+    def update_cache(self, cache_key, data):
+        """Update the cache with new data"""
+        self.cache[cache_key] = data
+        self.cache['cache_time'][cache_key] = datetime.now()
 
     def close(self):
         """Close the database connection"""

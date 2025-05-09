@@ -694,17 +694,18 @@ async def on_message(message):
     if message.author == bot.user:
         return
         
+    # Get auto responses once and cache them
     auto_responses = db.get_auto_responses()
-    content = message.content.lower()
-    
-    # Check each word in the message against each trigger
-    words = content.split()
-    for word in words:
+    if auto_responses:
+        content = message.content.lower()
+        
+        # Check for both exact trigger and trigger with space
         for trigger, response in auto_responses.items():
-            if trigger.lower() in word:
-                await message.channel.send(response)
-                return  # Only respond once per message
+            if content == trigger or content == trigger + ' ':
+                await message.reply(response)
+                return
     
+    # Process commands after checking auto-responses
     await bot.process_commands(message)
 
 @tree.command(name="balance", description="Check your current balance")
