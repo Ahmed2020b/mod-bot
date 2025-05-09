@@ -2,6 +2,7 @@ import os
 import sqlitecloud
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+import time
 
 load_dotenv()
 
@@ -9,43 +10,107 @@ class Database:
     def __init__(self):
         self.conn = None
         self.cursor = None
+        self.max_retries = 3
+        self.retry_delay = 1  # seconds
         self.connect()
         self.create_tables()
 
     def connect(self):
-        """Connect to the SQLiteCloud database"""
-        try:
-            # Get credentials from environment variables
-            host = os.getenv('SQLITECLOUD_HOST', 'ccnvo0ujhk.g4.sqlite.cloud')
-            port = os.getenv('SQLITECLOUD_PORT', '8860')
-            database = os.getenv('SQLITECLOUD_DB', 'chinook.sqlite')
-            apikey = os.getenv('SQLITECLOUD_API_KEY', 'pk8J7e64Pt8yfjaYeR5S6L9Emj0CwZw8RYBno8fi7p4')
-            
-            print(f"Attempting to connect to SQLiteCloud with:")
-            print(f"Host: {host}")
-            print(f"Port: {port}")
-            print(f"Database: {database}")
-            
-            # Construct connection URL
-            connection_url = f"sqlitecloud://{host}:{port}/{database}?apikey={apikey}"
-            
-            # Open the connection to SQLite Cloud
-            self.conn = sqlitecloud.connect(connection_url)
-            self.cursor = self.conn.cursor()
-            print("Successfully connected to SQLiteCloud database")
-            
-            # Test the connection with a simple query
-            self.cursor.execute("SELECT 1")
-            result = self.cursor.fetchone()
-            if result and result[0] == 1:
-                print("Database connection test successful")
-            else:
-                print("Warning: Database connection test failed")
+        """Connect to the SQLiteCloud database with retry logic"""
+        retries = 0
+        while retries < self.max_retries:
+            try:
+                # Get credentials from environment variables
+                host = os.getenv('SQLITECLOUD_HOST', 'ccnvo0ujhk.g4.sqlite.cloud')
+                port = os.getenv('SQLITECLOUD_PORT', '8860')
+                database = os.getenv('SQLITECLOUD_DB', 'chinook.sqlite')
+                apikey = os.getenv('SQLITECLOUD_API_KEY', 'pk8J7e64Pt8yfjaYeR5S6L9Emj0CwZw8RYBno8fi7p4')
                 
-        except Exception as e:
-            print(f"Error connecting to SQLiteCloud database: {str(e)}")
-            print("Please check your SQLiteCloud credentials and connection settings")
-            raise
+                print(f"Attempting to connect to SQLiteCloud (attempt {retries + 1}/{self.max_retries})")
+                
+                # Construct connection URL
+                connection_url = f"sqlitecloud://{host}:{port}/{database}?apikey={apikey}"
+                
+                # Close existing connection if it exists
+                if self.conn:
+                    try:
+                        self.conn.close()
+                    except:
+                        pass
+                
+                # Open the connection to SQLite Cloud
+                self.conn = sqlitecloud.connect(connection_url)
+                self.cursor = self.conn.cursor()
+                
+                # Test the connection
+                self.cursor.execute("SELECT 1")
+                result = self.cursor.fetchone()
+                if result and result[0] == 1:
+                    print("Successfully connected to SQLiteCloud database")
+                    return True
+                else:
+                    raise Exception("Connection test failed")
+                    
+            except Exception as e:
+                print(f"Error connecting to SQLiteCloud database (attempt {retries + 1}): {str(e)}")
+                retries += 1
+                if retries < self.max_retries:
+                    print(f"Retrying in {self.retry_delay} seconds...")
+                    time.sleep(self.retry_delay)
+                else:
+                    print("Max retries reached. Could not connect to database.")
+                    raise
+
+    def ensure_connection(self):
+        """Ensure database connection is active, reconnect if necessary"""
+        try:
+            # Test the connection
+            self.cursor.execute("SELECT 1")
+            self.cursor.fetchone()
+        except:
+            print("Connection lost, attempting to reconnect...")
+            self.connect()
+
+    def execute_with_retry(self, query, params=None):
+        """Execute a query with retry logic"""
+        retries = 0
+        while retries < self.max_retries:
+            try:
+                self.ensure_connection()
+                if params:
+                    self.cursor.execute(query, params)
+                else:
+                    self.cursor.execute(query)
+                return True
+            except Exception as e:
+                print(f"Error executing query (attempt {retries + 1}): {str(e)}")
+                retries += 1
+                if retries < self.max_retries:
+                    print(f"Retrying in {self.retry_delay} seconds...")
+                    time.sleep(self.retry_delay)
+                    self.connect()
+                else:
+                    print("Max retries reached. Query failed.")
+                    raise
+
+    def commit_with_retry(self):
+        """Commit changes with retry logic"""
+        retries = 0
+        while retries < self.max_retries:
+            try:
+                self.ensure_connection()
+                self.conn.commit()
+                return True
+            except Exception as e:
+                print(f"Error committing changes (attempt {retries + 1}): {str(e)}")
+                retries += 1
+                if retries < self.max_retries:
+                    print(f"Retrying in {self.retry_delay} seconds...")
+                    time.sleep(self.retry_delay)
+                    self.connect()
+                else:
+                    print("Max retries reached. Commit failed.")
+                    raise
 
     def create_tables(self):
         """Create necessary tables if they don't exist"""
@@ -226,17 +291,16 @@ class Database:
     def set_balance(self, user_id, amount):
         try:
             print(f"Attempting to set balance for user {user_id} to {amount}")
-            self.cursor.execute('''
+            self.execute_with_retry('''
                 INSERT INTO economy (user_id, balance)
                 VALUES (?, ?)
                 ON CONFLICT (user_id) DO UPDATE SET balance = ?
             ''', (user_id, amount, amount))
-            self.conn.commit()
+            self.commit_with_retry()
             print(f"Successfully set balance for user {user_id}")
         except Exception as e:
             print(f"Error setting balance: {str(e)}")
             print("Current connection status:", "Connected" if self.conn else "Disconnected")
-            self.conn.rollback()
             raise
 
     # Mod roles methods
@@ -407,15 +471,15 @@ class Database:
 
     def add_job(self, role_id, salary):
         try:
-            self.cursor.execute('''
+            self.execute_with_retry('''
                 INSERT INTO jobs (role_id, salary)
                 VALUES (?, ?)
                 ON CONFLICT (role_id) DO UPDATE SET salary = ?
             ''', (role_id, salary, salary))
-            self.conn.commit()
+            self.commit_with_retry()
         except Exception as e:
             print(f"Error adding job: {e}")
-            self.conn.rollback()
+            raise
 
     def remove_job(self, role_id):
         try:
@@ -429,17 +493,16 @@ class Database:
         try:
             self.check_and_create_tables()
             now = datetime.now().isoformat()
-            self.cursor.execute('''
+            self.execute_with_retry('''
                 INSERT INTO tickets (user_id, channel_id, created_at, closed_at)
                 VALUES (?, ?, ?, NULL)
             ''', (user_id, channel_id, now))
-            self.conn.commit()
+            self.commit_with_retry()
             ticket_id = self.cursor.lastrowid
             return ticket_id
         except Exception as e:
             print(f"Error creating ticket: {str(e)}")
-            self.conn.rollback()
-            return None
+            raise
 
     def close_ticket(self, channel_id):
         try:
