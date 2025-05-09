@@ -694,18 +694,29 @@ async def on_message(message):
     if message.author == bot.user:
         return
         
-    # Get auto responses once and cache them
-    auto_responses = db.get_auto_responses()
-    if auto_responses:
-        content = message.content.lower()
+    try:
+        # Get auto responses
+        auto_responses = db.get_auto_responses()
+        print(f"Checking message: '{message.content}' against {len(auto_responses)} auto responses")
         
-        # Check for both exact trigger and trigger with space
-        for trigger, response in auto_responses.items():
-            if content == trigger or content == trigger + ' ':
-                # Check if the bot has permission to send messages in this channel
-                if message.guild and message.channel.permissions_for(message.guild.me).send_messages:
-                    await message.reply(response)
-                return
+        if auto_responses:
+            content = message.content.lower()
+            
+            # Check for both exact trigger and trigger with space
+            for trigger, response in auto_responses.items():
+                print(f"Checking trigger: '{trigger}'")
+                if content == trigger or content == trigger + ' ':
+                    print(f"Match found! Trigger: '{trigger}', Response: '{response}'")
+                    # Check if the bot has permission to send messages in this channel
+                    if message.guild and message.channel.permissions_for(message.guild.me).send_messages:
+                        await message.reply(response)
+                        print("Response sent successfully")
+                    else:
+                        print("Bot doesn't have permission to send messages in this channel")
+                    return
+    
+    except Exception as e:
+        print(f"Error in auto-response handling: {str(e)}")
     
     # Process commands after checking auto-responses
     await bot.process_commands(message)

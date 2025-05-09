@@ -411,18 +411,21 @@ class Database:
     def get_auto_responses(self):
         """Get auto responses with caching"""
         try:
+            print("Fetching auto responses from database...")
             self.ensure_connection()
             self.cursor.execute('SELECT trigger, response FROM auto_responder')
             responses = {row[0]: row[1] for row in self.cursor.fetchall()}
+            print(f"Found {len(responses)} auto responses: {responses}")
             self.update_cache('auto_responses', responses)
             return responses
         except Exception as e:
             print(f"Error getting auto responses: {str(e)}")
-            return self.cache['auto_responses']  # Return cached data if available
+            return {}  # Return empty dict instead of cached data on error
 
     def add_auto_response(self, trigger, response):
         """Add auto response and update cache"""
         try:
+            print(f"Adding auto response: trigger='{trigger}', response='{response}'")
             self.ensure_connection()
             self.execute_with_retry('''
                 INSERT INTO auto_responder (trigger, response)
@@ -434,6 +437,7 @@ class Database:
             # Force cache refresh
             self.cache['auto_responses'] = {}
             self.cache['cache_time']['auto_responses'] = datetime.now()
+            print("Auto response added successfully")
             return True
         except Exception as e:
             print(f"Error adding auto response: {str(e)}")
