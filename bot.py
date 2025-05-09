@@ -702,7 +702,9 @@ async def on_message(message):
         # Check for both exact trigger and trigger with space
         for trigger, response in auto_responses.items():
             if content == trigger or content == trigger + ' ':
-                await message.reply(response)
+                # Check if the bot has permission to send messages in this channel
+                if message.guild and message.channel.permissions_for(message.guild.me).send_messages:
+                    await message.reply(response)
                 return
     
     # Process commands after checking auto-responses
