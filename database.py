@@ -18,7 +18,7 @@ class Database:
             'jobs': {},
             'cache_time': {}
         }
-        self.cache_duration = 60  # Cache duration in seconds
+        self.cache_duration = 5  # Reduced cache duration to 5 seconds
         self.connect()
         self.create_tables()
 
@@ -410,9 +410,6 @@ class Database:
     # Auto responder methods
     def get_auto_responses(self):
         """Get auto responses with caching"""
-        if self.is_cache_valid('auto_responses'):
-            return self.cache['auto_responses']
-        
         try:
             self.ensure_connection()
             self.cursor.execute('SELECT trigger, response FROM auto_responder')
@@ -434,8 +431,8 @@ class Database:
             ''', (trigger, response, response))
             self.commit_with_retry()
             
-            # Update cache
-            self.cache['auto_responses'][trigger] = response
+            # Force cache refresh
+            self.cache['auto_responses'] = {}
             self.cache['cache_time']['auto_responses'] = datetime.now()
             return True
         except Exception as e:
@@ -449,10 +446,9 @@ class Database:
             self.execute_with_retry('DELETE FROM auto_responder WHERE trigger = ?', (trigger,))
             self.commit_with_retry()
             
-            # Update cache
-            if trigger in self.cache['auto_responses']:
-                del self.cache['auto_responses'][trigger]
-                self.cache['cache_time']['auto_responses'] = datetime.now()
+            # Force cache refresh
+            self.cache['auto_responses'] = {}
+            self.cache['cache_time']['auto_responses'] = datetime.now()
             return True
         except Exception as e:
             print(f"Error removing auto response: {str(e)}")
