@@ -41,11 +41,32 @@ async def radd(ctx, member: discord.Member, amount: int):
     try:
         # Create embed for DM
         embed = discord.Embed(
-            title="⚠️ مخالفه ⚠️",
+            title="⚠️ لقد تم رصد مخالفة عليك ⚠️",
             color=discord.Color.red(),
-            description=f"تم رصدك من قبل {ctx.author.mention}\nالمبلغ: {amount}\nالرجاء دفع الى البنك المركزي"
+            description=f"عزيزي مواطن سيرفر <:NW:1368887896551198750> نود تبليغك بأن لديك مخالفة في روم <#1367906934497476609>"
         )
-        embed.set_footer(text="مخالفه مرورية", icon_url=ctx.guild.icon.url if ctx.guild.icon else None)
+        
+        # Add fields
+        embed.add_field(
+            name="تفاصيل المخالفة",
+            value=f"**المبلغ:** {amount}\n**من العسكري:** {ctx.author.mention}",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="تعليمات السداد",
+            value=f"يرجى السداد في روم <#1367907103234195528>\nاو سيتم خصم كل نقودك التي في البنك",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="الموعد النهائي",
+            value="يرجى السداد قبل نهاية الاسبوع",
+            inline=False
+        )
+        
+        # Add footer with police greeting
+        embed.set_footer(text="<:NW:1368887896551198750> تحياة شرطة 👮 سيرفر", icon_url=ctx.guild.icon.url if ctx.guild.icon else None)
         
         # Send DM to the mentioned user
         await member.send(embed=embed)
