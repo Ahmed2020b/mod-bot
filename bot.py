@@ -39,16 +39,16 @@ def has_radd_role():
 @has_radd_role()
 async def radd(ctx, member: discord.Member, amount: int):
     try:
-        # DM message template (you can edit this message)
-        dm_message = f"""
-        ⚠️ **تنبيه** ⚠️
-        تم رصدك من قبل {ctx.author.mention}
-        المبلغ: {amount}
-        الرجاء دفع الى البنك المركزي
-        """
+        # Create embed for DM
+        embed = discord.Embed(
+            title="⚠️ مخالفه ⚠️",
+            color=discord.Color.red(),
+            description=f"تم رصدك من قبل {ctx.author.mention}\nالمبلغ: {amount}\nالرجاء دفع الى البنك المركزي"
+        )
+        embed.set_footer(text="مخالفه مرورية", icon_url=ctx.guild.icon.url if ctx.guild.icon else None)
         
         # Send DM to the mentioned user
-        await member.send(dm_message)
+        await member.send(embed=embed)
         await ctx.send(f"تم إرسال التنبيه إلى {member.mention}")
         
     except discord.Forbidden:
